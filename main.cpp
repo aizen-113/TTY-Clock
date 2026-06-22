@@ -17,86 +17,81 @@
 #include <termios.h>
 #include <csignal>
 #include <cstdlib>
+#include <algorithm>
+#include <map>
+#include <memory>
+#include <array>
+#include <cstdio>
 
 
-const std::vector<std::string> DIGITS[10] = {
-    // 0
-    {"██████",
-     "██  ██",
-     "██  ██",
-     "██  ██",
-     "██████"},
-    // 1
-    {"    ██",
-     "    ██",
-     "    ██",
-     "    ██",
-     "    ██"},
-    // 2
-    {"██████",
-     "    ██",
-     "██████",
-     "██    ",
-     "██████"},
-    // 3
-    {"██████",
-     "    ██",
-     "██████",
-     "    ██",
-     "██████"},
-    // 4
-    {"██  ██",
-     "██  ██",
-     "██████",
-     "    ██",
-     "    ██"},
-    // 5
-    {"██████",
-     "██    ",
-     "██████",
-     "    ██",
-     "██████"},
-    // 6
-    {"██████",
-     "██    ",
-     "██████",
-     "██  ██",
-     "██████"},
-    // 7
-    {"██████",
-     "    ██",
-     "    ██",
-     "    ██",
-     "    ██"},
-    // 8
-    {"██████",
-     "██  ██",
-     "██████",
-     "██  ██",
-     "██████"},
-    // 9
-    {"██████",
-     "██  ██",
-     "██████",
-     "    ██",
-     "██████"}
+const bool NUMBER[10][15] = {
+    {1,1,1,1,0,1,1,0,1,1,0,1,1,1,1}, // 0
+    {0,0,1,0,0,1,0,0,1,0,0,1,0,0,1}, // 1
+    {1,1,1,0,0,1,1,1,1,1,0,0,1,1,1}, // 2
+    {1,1,1,0,0,1,1,1,1,0,0,1,1,1,1}, // 3
+    {1,0,1,1,0,1,1,1,1,0,0,1,0,0,1}, // 4
+    {1,1,1,1,0,0,1,1,1,0,0,1,1,1,1}, // 5
+    {1,1,1,1,0,0,1,1,1,1,0,1,1,1,1}, // 6
+    {1,1,1,0,0,1,0,0,1,0,0,1,0,0,1}, // 7
+    {1,1,1,1,0,1,1,1,1,1,0,1,1,1,1}, // 8
+    {1,1,1,1,0,1,1,1,1,0,0,1,1,1,1}  // 9
 };
 
-const std::vector<std::string> COLON = {
-    "  ",
-    "██",
-    "  ",
-    "██",
-    "  "
-};
 
-const std::vector<std::string> SPACE = {
-    "  ",
-    "  ",
-    "  ",
-    "  ",
-    "  "
-};
+
+
+std::string make_time_line(int hour, int min, int sec, int row,
+                           const std::string& bg_color, bool show_seconds) {
+    int h1 = hour / 10, h2 = hour % 10;
+    int m1 = min / 10, m2 = min % 10;
+
+    auto pixel = [&](bool on) -> std::string {
+        return on ? bg_color + "  " : "\033[0m  ";
+    };
+
+    auto digit = [&](int n) -> std::string {
+        return pixel(NUMBER[n][row * 3 + 0])
+             + pixel(NUMBER[n][row * 3 + 1])
+             + pixel(NUMBER[n][row * 3 + 2]);
+    };
+
+    auto gap = []() -> std::string { return "\033[0m  "; };
+
+    auto colon = [&](int r) -> std::string {
+        return (r == 1 || r == 3) ? bg_color + "  " : "\033[0m  ";
+    };
+
+    std::string line = digit(h1) + gap() + digit(h2) + gap() + colon(row) + gap()
+                     + digit(m1) + gap() + digit(m2);
+
+    if (show_seconds) {
+        int s1 = sec / 10, s2 = sec % 10;
+        line += gap() + colon(row) + gap() + digit(s1) + gap() + digit(s2);
+    }
+
+    return line + "\033[0m";
+}
+
+
+std::string get_accent_color() {
+    std::array<char, 128> buffer;
+    std::string result;
+
+    FILE* pipe = popen("python3 get_accent_color.py", "r");
+    if (!pipe) return "37";
+
+    while (fgets(buffer.data(), buffer.size(), pipe) != nullptr) {
+        result += buffer.data();
+    }
+
+    pclose(pipe);
+
+    // Trim whitespace
+    result.erase(0, result.find_first_not_of(" \n\r\t"));
+    result.erase(result.find_last_not_of(" \n\r\t") + 1);
+
+    return result.empty() ? "37" : result;
+}
    
 
 struct Winsize {
@@ -112,23 +107,10 @@ Winsize get_terminal_size() {
     if (ioctl(STDOUT_FILENO, TIOCGWINSZ, &ws) == 0) {
         return {ws.ws_row, ws.ws_col};
     }
-    return {24, 80}; // fallback
+    return {24, 80}; // fall
 }
 
-std::string make_time_line(int hour, int min, int sec, int row) {
-    int h1 = hour / 10;
-    int h2 = hour % 10;
-    int m1 = min / 10;
-    int m2 = min % 10;
-    int s1 = sec / 10;
-    int s2 = sec % 10;
 
-    return DIGITS[h1][row] + SPACE[row] + DIGITS[h2][row]
-         + SPACE[row] + COLON[row] + SPACE[row]
-         + DIGITS[m1][row] + SPACE[row] + DIGITS[m2][row]
-         + SPACE[row] + COLON[row] + SPACE[row]
-         + DIGITS[s1][row] + SPACE[row] + DIGITS[s2][row];
-}
 
 void restore_terminal() {
     tcsetattr(STDIN_FILENO, TCSAFLUSH, &orig_termios);
@@ -165,62 +147,85 @@ void drain_input() {
     }
 }
 
-int main() {
+
+int main(int argc, char** argv) {
+    // Parse arguments
+    bool show_seconds = false;
+    bool color_set = false;
+    std::string clock_color = "37";
+
+    std::map<std::string, std::string> color_names = {
+        {"red", "31"}, {"green", "32"}, {"yellow", "33"}, {"blue", "34"},
+        {"magenta", "35"}, {"cyan", "36"}, {"white", "37"}, {"black", "30"}
+    };
+
+    for (int i = 1; i < argc; ++i) {
+        std::string arg = argv[i];
+        if (arg == "-s") {
+            show_seconds = true;
+        } else if (arg == "-c" && i + 1 < argc) {
+            std::string val = argv[++i];
+            if (color_names.count(val)) {
+                clock_color = color_names[val];
+            } else {
+                clock_color = val;
+            }
+            color_set = true;
+        }
+    }
+
+    if (!color_set) {
+        clock_color = get_accent_color();
+    }
+
+    int bg_code = std::stoi(clock_color) + 10;
+    std::string bg_color = "\033[" + std::to_string(bg_code) + "m";
+
     disable_keyboard_input();
-
-    // Hide cursor
     std::cout << "\033[?25l";
-
-    // Clear screen once
-    std::cout << "\033[2J\033[H";
 
     while (true) {
         std::time_t now = std::time(nullptr);
         std::tm* local = std::localtime(&now);
 
         int hour = local->tm_hour;
-        int min  = local->tm_min;
-        int sec  = local->tm_sec;
+        int min = local->tm_min;
+        int sec = local->tm_sec;
 
-        // Build date string
-        std::ostringstream date;
-        date << std::setfill('0')
-             << std::setw(2) << local->tm_mday << "/"
-             << std::setw(2) << (local->tm_mon + 1) << "/"
-             << (local->tm_year + 1900);
+        // Day of week (abbreviated, uppercase)
+        char day_abbr[4];
+        std::strftime(day_abbr, sizeof(day_abbr), "%a", local);
+        std::string day_str = day_abbr;
+        std::transform(day_str.begin(), day_str.end(), day_str.begin(), ::toupper);
 
-        // Get terminal size
+        const int clock_height = 5;
+        int time_width = show_seconds ? 54 : 32;
+
         auto ws = get_terminal_size();
 
-        // The ASCII clock is 5 rows tall
-        const int clock_height = 5;
-        const int clock_width = 55; 
+        // 5 rows time + 1 row gap + 1 row day = 7 total
+        int time_row = std::max(1, (ws.rows - 7) / 2 + 1);
+        int time_col = std::max(1, (ws.cols - time_width) / 2 + 1);
 
-        int start_row = std::max(1, (ws.rows - clock_height - 2) / 2);
-        int start_col = (ws.cols - clock_width) / 2 + 1;
+        int day_row = time_row + 6;
+        int day_col = std::max(1, (ws.cols - static_cast<int>(day_str.size())) / 2 + 1);
 
-        // Clear screen and move cursor to top-left
         std::cout << "\033[2J\033[H";
 
-        // Move to date position
-        int date_col = std::max(1, (ws.cols - static_cast<int>(date.str().size())) / 2);
-        std::cout << "\033[" << start_row << ";" << date_col << "H"
-                  << "\033[36m" << date.str() << "\033[0m";
-
-        // Print the big digits below the date
+        // Draw time
         for (int row = 0; row < clock_height; ++row) {
-            std::cout << "\033[" << (start_row + 2 + row) << ";" << start_col << "H"
-                      << "\033[32m" << make_time_line(hour, min, sec, row) << "\033[0m";
+            std::cout << "\033[" << (time_row + row) << ";" << time_col << "H"
+                      << make_time_line(hour, min, sec, row, bg_color, show_seconds);
         }
 
+        // Draw day below
+        std::cout << "\033[" << day_row << ";" << day_col << "H"
+                  << "\033[" << clock_color << "m" << day_str << "\033[0m";
+
         std::cout << std::flush;
-
-        // Throw away any keystrokes typed during this second
         drain_input();
-
         std::this_thread::sleep_for(std::chrono::seconds(1));
     }
 
-    // restore_terminal() is called automatically via atexit()
     return 0;
 }
