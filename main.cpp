@@ -149,7 +149,6 @@ void drain_input() {
 
 
 int main(int argc, char** argv) {
-    // Parse arguments
     bool show_seconds = false;
     bool color_set = false;
     std::string clock_color = "37";
@@ -192,18 +191,21 @@ int main(int argc, char** argv) {
         int min = local->tm_min;
         int sec = local->tm_sec;
 
-        // Day of week (abbreviated, uppercase)
         char day_abbr[4];
         std::strftime(day_abbr, sizeof(day_abbr), "%a", local);
         std::string day_str = day_abbr;
         std::transform(day_str.begin(), day_str.end(), day_str.begin(), ::toupper);
 
         const int clock_height = 5;
-        int time_width = show_seconds ? 54 : 32;
+
+        // Dynamic width calculation
+        int digits = show_seconds ? 6 : 4;
+        int colons = show_seconds ? 2 : 1;
+        int gaps = digits + colons - 1;
+        int time_width = digits * 6 + gaps * 2 + colons * 2;
 
         auto ws = get_terminal_size();
 
-        // 5 rows time + 1 row gap + 1 row day = 7 total
         int time_row = std::max(1, (ws.rows - 7) / 2 + 1);
         int time_col = std::max(1, (ws.cols - time_width) / 2 + 1);
 
@@ -212,13 +214,11 @@ int main(int argc, char** argv) {
 
         std::cout << "\033[2J\033[H";
 
-        // Draw time
         for (int row = 0; row < clock_height; ++row) {
             std::cout << "\033[" << (time_row + row) << ";" << time_col << "H"
                       << make_time_line(hour, min, sec, row, bg_color, show_seconds);
         }
 
-        // Draw day below
         std::cout << "\033[" << day_row << ";" << day_col << "H"
                   << "\033[" << clock_color << "m" << day_str << "\033[0m";
 
